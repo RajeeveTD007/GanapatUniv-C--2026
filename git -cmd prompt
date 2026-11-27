@@ -1,0 +1,22 @@
+
+Use your folder path, git repository path
+------------------------------------------
+
+
+cd /d "#path"
+
+git init
+
+git remote add origin #your-git-link
+
+tar -a -c -f BookLibrary_Enhanced.zip BookLibrary_Enhanced
+
+git add .
+
+git commit -m "Upload BookLibrary Enhanced project"
+
+git branch -M main
+
+git push -u origin main
+
+git status
