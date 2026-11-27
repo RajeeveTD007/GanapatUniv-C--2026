@@ -1,0 +1,806 @@
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build
+ctest --test-dir build --output-on-failure
+build\BookLibrary.exe
+dir books.txt
+type books.txt
+build\BookLibrary.exe
+type books.txt
+doskey /history
+
+--------------------------------
+include/Book.h
+---------------
+#ifndef BOOK_H
+#define BOOK_H
+
+#include <string>
+
+struct Book {
+
+    int id;
+    std::string title;
+    bool isIssued;
+
+    // Default constructor
+    Book()
+        : id(0), title(""), isIssued(false) {
+    }
+
+    // Parameterized constructor
+    Book(int bookId, const std::string& bookTitle, bool issued = false)
+        : id(bookId), title(bookTitle), isIssued(issued) {
+    }
+};
+
+#endif
+---------------------------------------------
+
+include/Library.h
+------------------
+
+#ifndef LIBRARY_H
+#define LIBRARY_H
+
+#include "Book.h"
+
+#include <vector>
+#include <string>
+#include <cstddef>
+
+// Results of book operations
+enum class BookOperationResult {
+    Success,
+    BookNotFound,
+    AlreadyIssued,
+    NotIssued
+};
+
+// Results of file operations
+enum class FileOperationResult {
+    Success,
+    FileNotFound,
+    InvalidFormat,
+    IoError
+};
+
+class Library {
+
+private:
+
+    std::vector<Book> books;
+
+public:
+
+    // Add a new book
+    bool addBook(int id, const std::string& title);
+
+    // Display all books
+    void listBooks() const;
+
+    // Search book by ID
+    const Book* searchBook(int id) const;
+
+    // Sort books by title
+    void sortBooks();
+
+    // Return number of books
+    std::size_t size() const;
+
+    // Issue a book
+    BookOperationResult issueBook(int id);
+
+    // Return a book
+    BookOperationResult returnBook(int id);
+
+    // Save books to file
+    FileOperationResult saveToFile(
+        const std::string& filename
+    ) const;
+
+    // Load books from file
+    FileOperationResult loadFromFile(
+        const std::string& filename
+    );
+};
+
+#endif
+
+---------------------------------------------------
+
+src/Library.cpp
+---------------
+
+#include "Library.h"
+
+#include <iostream>
+#include <algorithm>
+#include <fstream>
+#include <iomanip>
+#include <unordered_set>
+#include <cstdio>
+#include <cerrno>
+#include <string>
+#include <vector>
+
+// Add a new book
+bool Library::addBook(int id, const std::string& title) {
+
+    if (id <= 0 || title.empty() || searchBook(id) != nullptr) {
+        return false;
+    }
+
+    books.push_back({id, title, false});
+
+    return true;
+}
+
+// Display all books
+void Library::listBooks() const {
+
+    if (books.empty()) {
+        std::cout << "No books available.\n";
+        return;
+    }
+
+    for (const Book& book : books) {
+
+        std::cout << "ID: " << book.id
+                  << " | Title: " << book.title
+                  << " | Status: "
+                  << (book.isIssued ? "Issued" : "Available")
+                  << '\n';
+    }
+}
+
+// Search book by ID
+const Book* Library::searchBook(int id) const {
+
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    return it == books.end() ? nullptr : &(*it);
+}
+
+// Sort books by title
+void Library::sortBooks() {
+
+    std::sort(
+        books.begin(),
+        books.end(),
+        [](const Book& a, const Book& b) {
+            return a.title < b.title;
+        }
+    );
+}
+
+// Return number of books
+std::size_t Library::size() const {
+
+    return books.size();
+}
+
+// Issue a book
+BookOperationResult Library::issueBook(int id) {
+
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    if (it == books.end()) {
+        return BookOperationResult::BookNotFound;
+    }
+
+    if (it->isIssued) {
+        return BookOperationResult::AlreadyIssued;
+    }
+
+    it->isIssued = true;
+
+    return BookOperationResult::Success;
+}
+
+// Return a book
+BookOperationResult Library::returnBook(int id) {
+
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    if (it == books.end()) {
+        return BookOperationResult::BookNotFound;
+    }
+
+    if (!it->isIssued) {
+        return BookOperationResult::NotIssued;
+    }
+
+    it->isIssued = false;
+
+    return BookOperationResult::Success;
+}
+
+// File format:
+// BOOK_LIBRARY_V1
+// number_of_records
+// id issued_flag "quoted title"
+
+// Save books to file
+FileOperationResult Library::saveToFile(
+    const std::string& filename
+) const {
+
+    const std::string temporary = filename + ".tmp";
+    const std::string backup = filename + ".bak";
+
+    // Step 1: Write data to temporary file
+    {
+        std::ofstream out(temporary.c_str(), std::ios::trunc);
+
+        if (!out) {
+            return FileOperationResult::IoError;
+        }
+
+        out << "BOOK_LIBRARY_V1\n";
+        out << books.size() << '\n';
+
+        for (const Book& book : books) {
+
+            out << book.id << ' '
+                << (book.isIssued ? 1 : 0) << ' '
+                << std::quoted(book.title) << '\n';
+
+            if (!out) {
+                out.close();
+                std::remove(temporary.c_str());
+                return FileOperationResult::IoError;
+            }
+        }
+
+        out.flush();
+
+        if (!out) {
+            out.close();
+            std::remove(temporary.c_str());
+            return FileOperationResult::IoError;
+        }
+    }
+
+    // Step 2: Remove an old backup, if present
+    std::remove(backup.c_str());
+
+    // Step 3: Rename the existing file to backup
+    bool hadOriginal = false;
+
+    errno = 0;
+
+    if (std::rename(filename.c_str(), backup.c_str()) == 0) {
+        hadOriginal = true;
+    }
+    else if (errno != ENOENT) {
+        std::remove(temporary.c_str());
+        return FileOperationResult::IoError;
+    }
+
+    // Step 4: Rename temporary file to the actual filename
+    if (std::rename(temporary.c_str(), filename.c_str()) != 0) {
+
+        // Restore the original file if one existed
+        if (hadOriginal) {
+            std::rename(backup.c_str(), filename.c_str());
+        }
+
+        std::remove(temporary.c_str());
+
+        return FileOperationResult::IoError;
+    }
+
+    // Step 5: Remove backup after successful save
+    if (hadOriginal) {
+        std::remove(backup.c_str());
+    }
+
+    return FileOperationResult::Success;
+}
+
+// Load books from file
+FileOperationResult Library::loadFromFile(
+    const std::string& filename
+) {
+
+    // Check whether the file exists
+    errno = 0;
+
+    std::FILE* file = std::fopen(filename.c_str(), "rb");
+
+    if (file == nullptr) {
+
+        if (errno == ENOENT) {
+            return FileOperationResult::FileNotFound;
+        }
+
+        return FileOperationResult::IoError;
+    }
+
+    std::fclose(file);
+
+    std::ifstream in(filename.c_str());
+
+    if (!in) {
+        return FileOperationResult::IoError;
+    }
+
+    // Step 1: Validate file header
+    std::string header;
+
+    if (!std::getline(in, header) ||
+        header != "BOOK_LIBRARY_V1") {
+
+        return FileOperationResult::InvalidFormat;
+    }
+
+    // Step 2: Read number of records
+    std::size_t count = 0;
+
+    if (!(in >> count) || count > 100000) {
+        return FileOperationResult::InvalidFormat;
+    }
+
+    // Step 3: Read into temporary storage
+    std::vector<Book> loadedBooks;
+
+    loadedBooks.reserve(count);
+
+    std::unordered_set<int> seenIds;
+
+    for (std::size_t i = 0; i < count; ++i) {
+
+        int id = 0;
+        int issued = -1;
+
+        std::string title;
+
+        if (!(in >> id >> issued >> std::quoted(title))) {
+            return FileOperationResult::InvalidFormat;
+        }
+
+        // Step 4: Validate each record
+        if (id <= 0 ||
+            (issued != 0 && issued != 1) ||
+            title.empty() ||
+            !seenIds.insert(id).second) {
+
+            return FileOperationResult::InvalidFormat;
+        }
+
+        loadedBooks.push_back({
+            id,
+            title,
+            issued == 1
+        });
+    }
+
+    // Step 5: Reject unexpected extra data
+    in >> std::ws;
+
+    if (!in.eof()) {
+        return FileOperationResult::InvalidFormat;
+    }
+
+    // Step 6: Update library only after complete validation
+    books.swap(loadedBooks);
+
+    return FileOperationResult::Success;
+}
+
+--------------------------------------------------------------
+tests/tests.cpp
+---------------
+
+#include "Library.h"
+
+#include <cassert>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <cstdio>
+
+int main() {
+
+    const std::string validFile = "test_books.txt";
+    const std::string badFile = "test_bad_books.txt";
+    const std::string duplicateFile = "test_duplicate_books.txt";
+    const std::string missingFile = "file_that_does_not_exist.txt";
+
+    // ------------------------------------------------
+    // TEST 1: Create and add books
+    // ------------------------------------------------
+
+    Library original;
+
+    assert(original.size() == 0);
+
+    assert(original.addBook(101, "C++ Programming"));
+    assert(original.addBook(102, "Python Programming"));
+
+    assert(original.size() == 2);
+
+    // Issue one book
+    assert(
+        original.issueBook(102) ==
+        BookOperationResult::Success
+    );
+
+    // ------------------------------------------------
+    // TEST 2: Save books to file
+    // ------------------------------------------------
+
+    assert(
+        original.saveToFile(validFile) ==
+        FileOperationResult::Success
+    );
+
+    // ------------------------------------------------
+    // TEST 3: Reload books from file
+    // ------------------------------------------------
+
+    Library restored;
+
+    assert(
+        restored.loadFromFile(validFile) ==
+        FileOperationResult::Success
+    );
+
+    assert(restored.size() == 2);
+
+    assert(
+        restored.searchBook(101)->title ==
+        "C++ Programming"
+    );
+
+    assert(
+        restored.searchBook(102)->title ==
+        "Python Programming"
+    );
+
+    // Verify issued status is preserved
+    assert(restored.searchBook(102)->isIssued);
+
+    // Verify available status is preserved
+    assert(!restored.searchBook(101)->isIssued);
+
+    // ------------------------------------------------
+    // TEST 4: Missing file handling
+    // ------------------------------------------------
+
+    std::remove(missingFile.c_str());
+
+    assert(
+        restored.loadFromFile(missingFile) ==
+        FileOperationResult::FileNotFound
+    );
+
+    // Existing data must remain unchanged
+    assert(restored.size() == 2);
+
+    assert(restored.searchBook(101) != nullptr);
+
+    assert(
+        restored.searchBook(101)->title ==
+        "C++ Programming"
+    );
+
+    // ------------------------------------------------
+    // TEST 5: Invalid issue status handling
+    // ------------------------------------------------
+
+    {
+        std::ofstream out(badFile.c_str());
+
+        assert(out);
+
+        out << "BOOK_LIBRARY_V1\n";
+        out << "1\n";
+        out << "103 7 \"Invalid Status Book\"\n";
+    }
+
+    assert(
+        restored.loadFromFile(badFile) ==
+        FileOperationResult::InvalidFormat
+    );
+
+    // Existing valid data must remain unchanged
+    assert(restored.size() == 2);
+
+    assert(
+        restored.searchBook(101)->title ==
+        "C++ Programming"
+    );
+
+    assert(restored.searchBook(102)->isIssued);
+
+    // ------------------------------------------------
+    // TEST 6: Duplicate ID handling
+    // ------------------------------------------------
+
+    {
+        std::ofstream out(duplicateFile.c_str());
+
+        assert(out);
+
+        out << "BOOK_LIBRARY_V1\n";
+        out << "2\n";
+        out << "201 0 \"First Book\"\n";
+        out << "201 0 \"Duplicate Book\"\n";
+    }
+
+    assert(
+        restored.loadFromFile(duplicateFile) ==
+        FileOperationResult::InvalidFormat
+    );
+
+    // Existing valid data must remain unchanged
+    assert(restored.size() == 2);
+
+    assert(
+        restored.searchBook(101)->title ==
+        "C++ Programming"
+    );
+
+    assert(restored.searchBook(102)->isIssued);
+
+    // ------------------------------------------------
+    // TEST 7: Duplicate ID through API
+    // ------------------------------------------------
+
+    assert(!restored.addBook(101, "Duplicate"));
+
+    // ------------------------------------------------
+    // TEST 8: Remove test files
+    // ------------------------------------------------
+
+    std::remove(validFile.c_str());
+    std::remove(badFile.c_str());
+    std::remove(duplicateFile.c_str());
+
+    // ------------------------------------------------
+    // TEST RESULT
+    // ------------------------------------------------
+
+    std::cout
+        << "All library and persistence tests passed."
+        << '\n';
+
+    return 0;
+}
+---------------------------------------------------------
+
+main.cpp
+----------
+#include "Library.h"
+#include <iostream>
+#include <limits>
+#include <string>
+
+static void clearInput() {
+    std::cin.clear();
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+}
+
+static void showFileResult(FileOperationResult result, const std::string& action) {
+    switch (result) {
+        case FileOperationResult::Success:
+            std::cout << action << " completed successfully.\n";
+            break;
+
+        case FileOperationResult::FileNotFound:
+            std::cout << "Data file not found. Current library was not changed.\n";
+            break;
+
+        case FileOperationResult::InvalidFormat:
+            std::cout << "File is malformed or contains invalid records. "
+                         "Current library was not changed.\n";
+            break;
+
+        case FileOperationResult::IoError:
+            std::cout << "File operation failed because of an I/O error.\n";
+            break;
+    }
+}
+
+int main() {
+    Library library;
+    const std::string dataFile = "books.txt";
+
+    FileOperationResult startup = library.loadFromFile(dataFile);
+
+    if (startup == FileOperationResult::Success)
+        std::cout << "Saved books loaded: " << library.size() << '\n';
+    else if (startup != FileOperationResult::FileNotFound)
+        showFileResult(startup, "Startup load");
+
+    int choice = 0;
+
+    do {
+        std::cout << "\n===== BOOK LIBRARY SYSTEM =====\n"
+                  << "1. Add Book\n"
+                  << "2. List Books\n"
+                  << "3. Search Book\n"
+                  << "4. Sort Books\n"
+                  << "5. Issue Book\n"
+                  << "6. Return Book\n"
+                  << "7. Save Books\n"
+                  << "8. Reload Books\n"
+                  << "9. Exit\n"
+                  << "Enter your choice: ";
+
+        if (!(std::cin >> choice)) {
+            std::cout << "Invalid input. Enter a number.\n";
+            clearInput();
+            continue;
+        }
+
+        switch (choice) {
+
+        case 1: {
+            int id;
+            std::string title;
+
+            std::cout << "Enter Book ID: ";
+
+            if (!(std::cin >> id)) {
+                std::cout << "Invalid book ID.\n";
+                clearInput();
+                break;
+            }
+
+            clearInput();
+
+            std::cout << "Enter Book Title: ";
+            std::getline(std::cin, title);
+
+            if (library.addBook(id, title))
+                std::cout << "Book added successfully.\n";
+            else
+                std::cout << "Invalid ID/title or duplicate Book ID.\n";
+
+            break;
+        }
+
+        case 2:
+            library.listBooks();
+            break;
+
+        case 3: {
+            int id;
+
+            std::cout << "Enter Book ID to search: ";
+
+            if (!(std::cin >> id)) {
+                std::cout << "Invalid book ID.\n";
+                clearInput();
+                break;
+            }
+
+            const Book* book = library.searchBook(id);
+
+            if (book) {
+                std::cout << "Book Found: " << book->title
+                          << " | Status: "
+                          << (book->isIssued ? "Issued" : "Available")
+                          << '\n';
+            } else {
+                std::cout << "Book not found.\n";
+            }
+
+            break;
+        }
+
+        case 4:
+            library.sortBooks();
+            std::cout << "Books sorted by title.\n";
+            break;
+
+        case 5:
+        case 6: {
+            int id;
+
+            std::cout << (choice == 5
+                          ? "Enter Book ID to issue: "
+                          : "Enter Book ID to return: ");
+
+            if (!(std::cin >> id)) {
+                std::cout << "Invalid book ID.\n";
+                clearInput();
+                break;
+            }
+
+            BookOperationResult result =
+                (choice == 5)
+                ? library.issueBook(id)
+                : library.returnBook(id);
+
+            if (result == BookOperationResult::Success) {
+                std::cout << (choice == 5
+                              ? "Book issued.\n"
+                              : "Book returned.\n");
+            }
+            else if (result == BookOperationResult::BookNotFound) {
+                std::cout << "Book ID not found.\n";
+            }
+            else if (result == BookOperationResult::AlreadyIssued) {
+                std::cout << "Book is already issued.\n";
+            }
+            else {
+                std::cout << "Book was not issued.\n";
+            }
+
+            break;
+        }
+
+        case 7:
+            showFileResult(library.saveToFile(dataFile), "Save");
+            break;
+
+        case 8:
+            showFileResult(library.loadFromFile(dataFile), "Reload");
+            break;
+
+        case 9:
+            std::cout << "Exiting. Use option 7 to save changes before exit.\n";
+            break;
+
+        default:
+            std::cout << "Invalid choice. Try again.\n";
+        }
+
+    } while (choice != 9);
+
+    return 0;
+}
+-------------------------------------------------------------------------------------
+CMakeLists.txt
+---------------
+cmake_minimum_required(VERSION 3.15)
+
+project(BookLibrary)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_library(Library
+    src/Library.cpp
+)
+
+target_include_directories(Library PUBLIC include)
+
+add_executable(BookLibrary
+    main.cpp
+)
+target_link_libraries(BookLibrary PRIVATE Library)
+
+enable_testing()
+
+add_executable(LibraryTests
+    tests/tests.cpp
+)
+target_link_libraries(LibraryTests PRIVATE Library)
+
+add_test(
+    NAME LibraryTest
+    COMMAND LibraryTests
+)

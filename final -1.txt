@@ -1,0 +1,417 @@
+
+CMakeLists.txt //Inside capstone project
+---------------
+cmake_minimum_required(VERSION 3.15)
+
+project(BookLibrary)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Library source code
+add_library(Library
+    src/Library.cpp
+)
+
+target_include_directories(Library PUBLIC include)
+
+# Main application
+add_executable(BookLibrary
+    main.cpp
+)
+
+target_link_libraries(BookLibrary PRIVATE Library)
+
+# Testing configuration
+enable_testing()
+
+add_executable(LibraryTests
+    tests/tests.cpp
+)
+
+target_link_libraries(LibraryTests PRIVATE Library)
+
+add_test(
+    NAME LibraryTest
+    COMMAND LibraryTests
+)
+
+--------------------------------------------------------
+Library.Cpp //Inside src folder
+-----------
+
+#include "Library.h"
+#include <iostream>
+#include <algorithm>
+
+// Add a new book
+bool Library::addBook(int id, const std::string& title) {
+    // Check for duplicate ID
+    if (searchBook(id) != nullptr) {
+        return false;
+    }
+
+    // Add book to vector
+    books.push_back({id, title});
+
+    return true;
+}
+
+// Display all books
+void Library::listBooks() const {
+    if (books.empty()) {
+        std::cout << "No books available.\n";
+        return;
+    }
+
+    for (const Book& book : books) {
+        std::cout << "ID: " << book.id
+                  << " | Title: " << book.title << '\n';
+    }
+}
+
+// Search book using ID
+const Book* Library::searchBook(int id) const {
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    if (it != books.end()) {
+        return &(*it);
+    }
+
+    return nullptr;
+}
+
+// Sort books alphabetically
+void Library::sortBooks() {
+    std::sort(
+        books.begin(),
+        books.end(),
+        [](const Book& a, const Book& b) {
+            return a.title < b.title;
+        }
+    );
+}
+
+// Return total number of books
+std::size_t Library::size() const {
+    return books.size();
+}
+
+
+
+
+------------------------------------------
+rmdir /s /q build
+cmake -S . -B build -G "MinGW Makefiles"
+ctest --test-dir build --output-on-failure
+dir build\LibraryTests.exe
+build\BookLibrary.exe
+cmake --build build --target BookLibrary
+dir build\BookLibrary.exe
+build\BookLibrary.exe
+
+
+
+//If not functioning--add these
+ctest --test-dir build --output-on-failure
+cmake --build build --target LibraryTests
+dir build\LibraryTests.exe
+---------------------------------------------------
+In commandprompt
+-----------------
+mkdir capstone
+cd capstone
+mkdir include src tests
+dir
+
+(After adding files)
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build
+build\BookLibrary.exe
+ctest --test-dir build --output-on-failure
+build\BookLibrary.exe
+doskey /history
+
+
+
+Include Folder
+
+Book.h
+-------
+
+#ifndef BOOK_H
+#define BOOK_H
+
+#include <string>
+
+struct Book {
+    int id;
+    std::string title;
+};
+
+#endif
+
+
+
+Library.h
+-------------
+#ifndef LIBRARY_H
+#define LIBRARY_H
+
+#include "Book.h"
+#include <vector>
+#include <string>
+#include <cstddef>
+
+class Library {
+private:
+    std::vector<Book> books;
+
+public:
+    bool addBook(int id, const std::string& title);
+
+    void listBooks() const;
+
+    const Book* searchBook(int id) const;
+
+    void sortBooks();
+
+    std::size_t size() const;
+};
+
+#endif
+
+-------------------------------------------------------
+tests folder
+
+tests.cpp
+---------
+
+#include "Library.h"
+#include <cassert>
+#include <iostream>
+
+int main() {
+
+    Library library;
+
+    // Test 1: Initially library should be empty
+    assert(library.size() == 0);
+
+    // Test 2: Add first book
+    assert(library.addBook(101, "C++ Programming"));
+
+    // Test 3: Add second book
+    assert(library.addBook(102, "Python Programming"));
+
+    // Test 4: Check book count
+    assert(library.size() == 2);
+
+    // Test 5: Reject duplicate ID
+    assert(!library.addBook(101, "Java Programming"));
+
+    // Test 6: Search existing book
+    const Book* book = library.searchBook(101);
+
+    assert(book != nullptr);
+    assert(book->title == "C++ Programming");
+
+    // Test 7: Search missing book
+    assert(library.searchBook(999) == nullptr);
+
+    // Test 8: Sort books
+    library.sortBooks();
+
+    const Book* first = library.searchBook(101);
+
+    assert(first != nullptr);
+
+    std::cout << "All Library tests passed successfully.\n";
+
+    return 0;
+}
+
+---------------------------------------------------------------
+Inside Capstone project
+
+.gitignore
+----------
+build/
+*.exe
+*.o
+*.a
+*.dll
+*.log
+.vscode/
+
+
+
+=--------------------------------------------------------
+inside capstone folder
+
+main.cpp
+---------
+#include "Library.h"
+
+#include <iostream>
+#include <limits>
+
+int main() {
+
+    Library library;
+
+    int choice = 0;
+
+    do {
+
+        std::cout << "\n===== BOOK LIBRARY SYSTEM =====\n";
+
+        std::cout << "1. Add Book\n";
+        std::cout << "2. List Books\n";
+        std::cout << "3. Search Book\n";
+        std::cout << "4. Sort Books\n";
+        std::cout << "5. Exit\n";
+
+        std::cout << "Enter your choice: ";
+
+        if (!(std::cin >> choice)) {
+
+            std::cout << "Invalid input. Enter a number.\n";
+
+            std::cin.clear();
+
+            std::cin.ignore(
+                std::numeric_limits<std::streamsize>::max(),
+                '\n'
+            );
+
+            continue;
+        }
+
+        switch (choice) {
+
+            case 1: {
+
+                int id;
+                std::string title;
+
+                std::cout << "Enter Book ID: ";
+
+                if (!(std::cin >> id)) {
+
+                    std::cout << "Invalid book ID.\n";
+
+                    std::cin.clear();
+
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    break;
+                }
+
+                std::cin.ignore(
+                    std::numeric_limits<std::streamsize>::max(),
+                    '\n'
+                );
+
+                std::cout << "Enter Book Title: ";
+
+                std::getline(std::cin, title);
+
+                if (title.empty()) {
+                    std::cout << "Book title cannot be empty.\n";
+                    break;
+                }
+
+                if (library.addBook(id, title)) {
+
+                    std::cout << "Book added successfully.\n";
+
+                } else {
+
+                    std::cout << "Duplicate Book ID. Cannot add.\n";
+                }
+
+                break;
+            }
+
+            case 2: {
+
+                library.listBooks();
+
+                break;
+            }
+
+            case 3: {
+
+                int id;
+
+                std::cout << "Enter Book ID to search: ";
+
+                if (!(std::cin >> id)) {
+
+                    std::cout << "Invalid book ID.\n";
+
+                    std::cin.clear();
+
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    break;
+                }
+
+                const Book* book = library.searchBook(id);
+
+                if (book != nullptr) {
+
+                    std::cout << "Book Found: "
+                              << book->title << '\n';
+
+                } else {
+
+                    std::cout << "Book not found.\n";
+                }
+
+                break;
+            }
+
+            case 4: {
+
+                library.sortBooks();
+
+                std::cout << "Books sorted by title.\n";
+
+                break;
+            }
+
+            case 5: {
+
+                std::cout << "Exiting Library System.\n";
+
+                break;
+            }
+
+            default: {
+
+                std::cout << "Invalid choice. Try again.\n";
+            }
+        }
+
+    } while (choice != 5);
+
+    return 0;
+}
+---------------------------------------------------------------
+
+
+

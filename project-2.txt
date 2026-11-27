@@ -1,0 +1,604 @@
+In command prompt
+------------------
+
+cls
+rmdir /s /q build
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build
+ctest --test-dir build --output-on-failure
+build\BookLibrary.exe
+doskey /history
+---------------------------------------
+
+
+CMakeLists.txt //Inside capstone project
+---------------
+cmake_minimum_required(VERSION 3.15)
+
+project(BookLibrary)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Library source code
+add_library(Library
+    src/Library.cpp
+)
+
+target_include_directories(Library PUBLIC include)
+
+# Main application
+add_executable(BookLibrary
+    main.cpp
+)
+
+target_link_libraries(BookLibrary PRIVATE Library)
+
+# Testing configuration
+enable_testing()
+
+add_executable(LibraryTests
+    tests/tests.cpp
+)
+
+target_link_libraries(LibraryTests PRIVATE Library)
+
+add_test(
+    NAME LibraryTest
+    COMMAND LibraryTests
+)
+
+
+---------------------------------------
+
+Modify all the files
+---------------------
+C:.
+│   .gitignore
+│   CMakeLists.txt
+│   main.cpp
+│
+├───build
+│   
+├───include
+│       Book.h
+│       Library.h
+│
+├───src
+│       Library.cpp
+│
+└───tests
+        tests.cpp
+-----------------------------------------------------
+Include-Folder
+
+ Book.h
+--------
+
+#ifndef BOOK_H
+#define BOOK_H
+
+#include <string>
+
+struct Book {
+    int id;
+    std::string title;
+    bool isIssued = false;
+};
+
+#endif
+
+
+
+
+
+
+
+------------------------------------------------------
+Include-Folder
+ 
+Library.h
+------------
+
+#ifndef LIBRARY_H
+#define LIBRARY_H
+
+#include "Book.h"
+#include <vector>
+#include <string>
+#include <cstddef>
+
+enum class BookOperationResult {
+    Success,
+    BookNotFound,
+    AlreadyIssued,
+    NotIssued
+};
+
+class Library {
+private:
+    std::vector<Book> books;
+
+public:
+    bool addBook(int id, const std::string& title);
+
+    void listBooks() const;
+
+    const Book* searchBook(int id) const;
+
+    void sortBooks();
+
+    std::size_t size() const;
+
+    // New operations
+    BookOperationResult issueBook(int id);
+
+    BookOperationResult returnBook(int id);
+};
+
+#endif
+
+
+
+
+------------------------------------------------------
+src-Folder  
+
+Library.cpp
+------------
+
+
+#include "Library.h"
+#include <iostream>
+#include <algorithm>
+
+// Add a new book
+bool Library::addBook(int id, const std::string& title) {
+
+    if (searchBook(id) != nullptr) {
+        return false;
+    }
+
+    books.push_back({id, title});
+
+    return true;
+}
+
+// Display all books
+void Library::listBooks() const {
+
+    if (books.empty()) {
+        std::cout << "No books available.\n";
+        return;
+    }
+
+    for (const Book& book : books) {
+
+        std::cout << "ID: " << book.id
+                  << " | Title: " << book.title
+                  << " | Status: "
+                  << (book.isIssued ? "Issued" : "Available")
+                  << '\n';
+    }
+}
+
+// Search book using ID
+const Book* Library::searchBook(int id) const {
+
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    if (it != books.end()) {
+        return &(*it);
+    }
+
+    return nullptr;
+}
+
+// Sort books alphabetically
+void Library::sortBooks() {
+
+    std::sort(
+        books.begin(),
+        books.end(),
+        [](const Book& a, const Book& b) {
+            return a.title < b.title;
+        }
+    );
+}
+
+// Return total number of books
+std::size_t Library::size() const {
+    return books.size();
+}
+
+// Issue a book
+BookOperationResult Library::issueBook(int id) {
+
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    if (it == books.end()) {
+        return BookOperationResult::BookNotFound;
+    }
+
+    if (it->isIssued) {
+        return BookOperationResult::AlreadyIssued;
+    }
+
+    it->isIssued = true;
+
+    return BookOperationResult::Success;
+}
+
+// Return a book
+BookOperationResult Library::returnBook(int id) {
+
+    auto it = std::find_if(
+        books.begin(),
+        books.end(),
+        [id](const Book& book) {
+            return book.id == id;
+        }
+    );
+
+    if (it == books.end()) {
+        return BookOperationResult::BookNotFound;
+    }
+
+    if (!it->isIssued) {
+        return BookOperationResult::NotIssued;
+    }
+
+    it->isIssued = false;
+
+    return BookOperationResult::Success;
+}
+
+
+
+---------------------------------------------------------
+Inside tests folder
+
+tests.cpp
+---------
+
+#include "Library.h"
+
+#include <cassert>
+#include <iostream>
+
+int main() {
+
+    Library library;
+
+    // Test 1: Initially library should be empty
+    assert(library.size() == 0);
+
+    // Test 2: Add books
+    assert(library.addBook(101, "C++ Programming"));
+    assert(library.addBook(102, "Python Programming"));
+
+    // Test 3: Check book count
+    assert(library.size() == 2);
+
+    // Test 4: Reject duplicate ID
+    assert(!library.addBook(101, "Java Programming"));
+
+    // Test 5: Search existing book
+    const Book* book = library.searchBook(101);
+
+    assert(book != nullptr);
+    assert(book->title == "C++ Programming");
+    assert(book->isIssued == false);
+
+    // Test 6: Search invalid ID
+    assert(library.searchBook(999) == nullptr);
+    assert(library.searchBook(-1) == nullptr);
+
+    // Test 7: Issue an available book
+    assert(library.issueBook(101) ==
+           BookOperationResult::Success);
+
+    assert(library.searchBook(101)->isIssued == true);
+
+    // Test 8: Repeated issue must fail
+    assert(library.issueBook(101) ==
+           BookOperationResult::AlreadyIssued);
+
+    // Test 9: Return an issued book
+    assert(library.returnBook(101) ==
+           BookOperationResult::Success);
+
+    assert(library.searchBook(101)->isIssued == false);
+
+    // Test 10: Repeated return must fail
+    assert(library.returnBook(101) ==
+           BookOperationResult::NotIssued);
+
+    // Test 11: Issue and return again
+    assert(library.issueBook(101) ==
+           BookOperationResult::Success);
+
+    assert(library.returnBook(101) ==
+           BookOperationResult::Success);
+
+    // Test 12: Issue invalid book ID
+    assert(library.issueBook(999) ==
+           BookOperationResult::BookNotFound);
+
+    // Test 13: Return invalid book ID
+    assert(library.returnBook(999) ==
+           BookOperationResult::BookNotFound);
+
+    // Test 14: Sort books
+    library.sortBooks();
+
+    assert(library.size() == 2);
+
+    std::cout << "All Library tests passed successfully.\n";
+
+    return 0;
+}
+----------------------------------------------------------
+
+
+Inside capstone - Include
+
+main.cpp
+--------
+
+#include "Library.h"
+
+#include <iostream>
+#include <limits>
+
+int main() {
+
+    Library library;
+
+    int choice = 0;
+
+    do {
+
+        std::cout << "\n===== BOOK LIBRARY SYSTEM =====\n";
+
+        std::cout << "1. Add Book\n";
+        std::cout << "2. List Books\n";
+        std::cout << "3. Search Book\n";
+        std::cout << "4. Sort Books\n";
+        std::cout << "5. Issue Book\n";
+        std::cout << "6. Return Book\n";
+        std::cout << "7. Exit\n";
+
+        std::cout << "Enter your choice: ";
+
+        if (!(std::cin >> choice)) {
+
+            std::cout << "Invalid input. Enter a number.\n";
+
+            std::cin.clear();
+
+            std::cin.ignore(
+                std::numeric_limits<std::streamsize>::max(),
+                '\n'
+            );
+
+            continue;
+        }
+
+        switch (choice) {
+
+            case 1: {
+
+                int id;
+                std::string title;
+
+                std::cout << "Enter Book ID: ";
+
+                if (!(std::cin >> id)) {
+
+                    std::cout << "Invalid book ID.\n";
+
+                    std::cin.clear();
+
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    break;
+                }
+
+                std::cin.ignore(
+                    std::numeric_limits<std::streamsize>::max(),
+                    '\n'
+                );
+
+                std::cout << "Enter Book Title: ";
+
+                std::getline(std::cin, title);
+
+                if (title.empty()) {
+                    std::cout << "Book title cannot be empty.\n";
+                    break;
+                }
+
+                if (library.addBook(id, title)) {
+                    std::cout << "Book added successfully.\n";
+                }
+                else {
+                    std::cout << "Duplicate Book ID. Cannot add.\n";
+                }
+
+                break;
+            }
+
+            case 2: {
+
+                library.listBooks();
+
+                break;
+            }
+
+            case 3: {
+
+                int id;
+
+                std::cout << "Enter Book ID to search: ";
+
+                if (!(std::cin >> id)) {
+
+                    std::cout << "Invalid book ID.\n";
+
+                    std::cin.clear();
+
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    break;
+                }
+
+                const Book* book = library.searchBook(id);
+
+                if (book != nullptr) {
+
+                    std::cout << "Book Found: "
+                              << book->title
+                              << " | Status: "
+                              << (book->isIssued ? "Issued" : "Available")
+                              << '\n';
+                }
+                else {
+                    std::cout << "Book not found.\n";
+                }
+
+                break;
+            }
+
+            case 4: {
+
+                library.sortBooks();
+
+                std::cout << "Books sorted by title.\n";
+
+                break;
+            }
+
+            case 5: {
+
+                int id;
+
+                std::cout << "Enter Book ID to issue: ";
+
+                if (!(std::cin >> id)) {
+
+                    std::cout << "Invalid book ID.\n";
+
+                    std::cin.clear();
+
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    break;
+                }
+
+                BookOperationResult result = library.issueBook(id);
+
+                switch (result) {
+
+                    case BookOperationResult::Success:
+                        std::cout << "Book issued successfully.\n";
+                        break;
+
+                    case BookOperationResult::BookNotFound:
+                        std::cout << "Book ID not found.\n";
+                        break;
+
+                    case BookOperationResult::AlreadyIssued:
+                        std::cout << "Book is already issued.\n";
+                        break;
+
+                    default:
+                        break;
+                }
+
+                break;
+            }
+
+            case 6: {
+
+                int id;
+
+                std::cout << "Enter Book ID to return: ";
+
+                if (!(std::cin >> id)) {
+
+                    std::cout << "Invalid book ID.\n";
+
+                    std::cin.clear();
+
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    break;
+                }
+
+                BookOperationResult result = library.returnBook(id);
+
+                switch (result) {
+
+                    case BookOperationResult::Success:
+                        std::cout << "Book returned successfully.\n";
+                        break;
+
+                    case BookOperationResult::BookNotFound:
+                        std::cout << "Book ID not found.\n";
+                        break;
+
+                    case BookOperationResult::NotIssued:
+                        std::cout << "Book was not issued.\n";
+                        break;
+
+                    default:
+                        break;
+                }
+
+                break;
+            }
+
+            case 7: {
+
+                std::cout << "Exiting Library System.\n";
+
+                break;
+            }
+
+            default: {
+
+                std::cout << "Invalid choice. Try again.\n";
+            }
+        }
+
+    } while (choice != 7);
+
+    return 0;
+}
+
+----------------------------------------------------------------
